@@ -93,6 +93,7 @@
 #include <linux/cache.h>
 #include <linux/rodata_test.h>
 #include <linux/jump_label.h>
+#include <linux/stackdepot.h>
 
 #include <asm/io.h>
 #include <asm/setup.h>
@@ -559,6 +560,7 @@ static void __init mm_init(void)
 	page_ext_init_flatmem();
 	init_debug_pagealloc();
 	report_meminit();
+	stack_depot_init();
 	mem_init();
 	/* page_owner must be initialized after buddy is ready */
 	page_ext_init_flatmem_late();
