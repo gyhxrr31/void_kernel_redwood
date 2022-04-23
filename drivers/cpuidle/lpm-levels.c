@@ -94,17 +94,10 @@ static void cluster_prepare(struct lpm_cluster *cluster,
 static bool sleep_disabled;
 module_param_named(sleep_disabled, sleep_disabled, bool, 0664);
 
-#ifdef CONFIG_SCHED_WALT
 static bool check_cpu_isolated(int cpu)
 {
 	return cpu_isolated(cpu);
 }
-#else
-static bool check_cpu_isolated(int cpu)
-{
-	return false;
-}
-#endif
 
 #ifdef CONFIG_MSM_PM
 /**
