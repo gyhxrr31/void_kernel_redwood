@@ -4122,9 +4122,6 @@ static inline int task_fits_cpu(struct task_struct *p, int cpu)
 
 static inline void update_misfit_status(struct task_struct *p, struct rq *rq)
 {
-	if (!static_branch_unlikely(&sched_asym_cpucapacity))
-		return;
-
 	if (!p || p->nr_cpus_allowed == 1) {
 		rq->misfit_task_load = 0;
 		return;
@@ -6353,10 +6350,7 @@ static inline bool asym_fits_cpu(unsigned long util,
 				 unsigned long util_max,
 				 int cpu)
 {
-	if (static_branch_unlikely(&sched_asym_cpucapacity))
-		return util_fits_cpu(util, util_min, util_max, cpu);
-
-	return true;
+	return util_fits_cpu(util, util_min, util_max, cpu);
 }
 
 /*
@@ -6372,12 +6366,10 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	 * On asymmetric system, update task utilization because we will check
 	 * that the task fits with cpu's capacity.
 	 */
-	if (static_branch_unlikely(&sched_asym_cpucapacity)) {
-		sync_entity_load_avg(&p->se);
-		task_util = task_util_est(p);
-		util_min = uclamp_eff_value(p, UCLAMP_MIN);
-		util_max = uclamp_eff_value(p, UCLAMP_MAX);
-	}
+	sync_entity_load_avg(&p->se);
+	task_util = task_util_est(p);
+	util_min = uclamp_eff_value(p, UCLAMP_MIN);
+	util_max = uclamp_eff_value(p, UCLAMP_MAX);
 
 	if ((available_idle_cpu(target) || sched_idle_cpu(target)) &&
 	    asym_fits_cpu(task_util, util_min, util_max, target))
@@ -6411,20 +6403,18 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	 * For asymmetric CPU capacity systems, our domain of interest is
 	 * sd_asym_cpucapacity rather than sd_llc.
 	 */
-	if (static_branch_unlikely(&sched_asym_cpucapacity)) {
-		sd = rcu_dereference(per_cpu(sd_asym_cpucapacity, target));
-		/*
-		 * On an asymmetric CPU capacity system where an exclusive
-		 * cpuset defines a symmetric island (i.e. one unique
-		 * capacity_orig value through the cpuset), the key will be set
-		 * but the CPUs within that cpuset will not have a domain with
-		 * SD_ASYM_CPUCAPACITY. These should follow the usual symmetric
-		 * capacity path.
-		 */
-		if (sd) {
-			i = select_idle_capacity(p, sd, target);
-			return ((unsigned)i < nr_cpumask_bits) ? i : target;
-		}
+	sd = rcu_dereference(per_cpu(sd_asym_cpucapacity, target));
+	/*
+	 * On an asymmetric CPU capacity system where an exclusive
+	 * cpuset defines a symmetric island (i.e. one unique
+	 * capacity_orig value through the cpuset), the key will be set
+	 * but the CPUs within that cpuset will not have a domain with
+	 * SD_ASYM_CPUCAPACITY. These should follow the usual symmetric
+	 * capacity path.
+	 */
+	if (sd) {
+		i = select_idle_capacity(p, sd, target);
+		return ((unsigned)i < nr_cpumask_bits) ? i : target;
 	}
 
 	sd = rcu_dereference(per_cpu(sd_llc, target));
