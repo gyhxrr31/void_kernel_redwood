@@ -41,27 +41,8 @@ static int convert_prio(int prio)
 	return cpupri;
 }
 
-/**
- * drop_nopreempt_cpus - remove likely nonpreemptible cpus from the mask
- * @lowest_mask: mask with selected CPUs (non-NULL)
- */
-static void
-drop_nopreempt_cpus(struct cpumask *lowest_mask)
-{
-	unsigned int cpu = cpumask_first(lowest_mask);
-	while (cpu < nr_cpu_ids) {
-		/* unlocked access */
-		struct task_struct *task = READ_ONCE(cpu_rq(cpu)->curr);
-		if (task_may_not_preempt(task, cpu))
-			cpumask_clear_cpu(cpu, lowest_mask);
-
-		cpu = cpumask_next(cpu, lowest_mask);
-	}
-}
-
 static inline int __cpupri_find(struct cpupri *cp, struct task_struct *p,
-				struct cpumask *lowest_mask, int idx,
-				bool drop_nopreempts)
+				struct cpumask *lowest_mask, int idx)
 {
 	struct cpupri_vec *vec  = &cp->pri_to_cpu[idx];
 	int skip = 0;
@@ -97,10 +78,6 @@ static inline int __cpupri_find(struct cpupri *cp, struct task_struct *p,
 
 	if (lowest_mask) {
 		cpumask_and(lowest_mask, p->cpus_ptr, vec->mask);
-		cpumask_andnot(lowest_mask, lowest_mask,
-			       cpu_isolated_mask);
-		if (drop_nopreempts)
-			drop_nopreempt_cpus(lowest_mask);
 
 		/*
 		 * We have to ensure that we have at least one bit
@@ -146,14 +123,12 @@ int cpupri_find_fitness(struct cpupri *cp, struct task_struct *p,
 {
 	int task_pri = convert_prio(p->prio);
 	int idx, cpu;
-	bool drop_nopreempts = task_pri <= MAX_RT_PRIO;
 
 	BUG_ON(task_pri >= CPUPRI_NR_PRIORITIES);
 
-retry:
 	for (idx = 0; idx < task_pri; idx++) {
 
-		if (!__cpupri_find(cp, p, lowest_mask, idx, drop_nopreempts))
+		if (!__cpupri_find(cp, p, lowest_mask, idx))
 			continue;
 
 		if (!lowest_mask || !fitness_fn)
@@ -173,15 +148,6 @@ retry:
 			continue;
 
 		return 1;
-	}
-
-	/*
-	 * If we can't find any non-preemptible cpu's, retry so we can
-	 * find the lowest priority target and avoid priority inversion.
-	 */
-	if (drop_nopreempts) {
-		drop_nopreempts = false;
-		goto retry;
 	}
 
 	/*
@@ -323,15 +289,4 @@ void cpupri_cleanup(struct cpupri *cp)
 	kfree(cp->cpu_to_pri);
 	for (i = 0; i < CPUPRI_NR_PRIORITIES; i++)
 		free_cpumask_var(cp->pri_to_cpu[i].mask);
-}
-
-/*
- * cpupri_check_rt - check if CPU has a RT task
- * should be called from rcu-sched read section.
- */
-bool cpupri_check_rt(void)
-{
-	int cpu = raw_smp_processor_id();
-
-	return cpu_rq(cpu)->rd->cpupri.cpu_to_pri[cpu] > CPUPRI_NORMAL;
 }
