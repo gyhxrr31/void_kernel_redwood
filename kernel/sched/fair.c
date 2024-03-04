@@ -3905,8 +3905,7 @@ static inline int util_fits_cpu(unsigned long util,
 				unsigned long uclamp_max,
 				int cpu)
 {
-	unsigned long capacity_orig, capacity_orig_thermal;
-	unsigned long capacity = capacity_of(cpu);
+	unsigned long capacity_orig, capacity = capacity_of(cpu);
 	bool fits, uclamp_max_fits;
 
 	/*
@@ -3942,7 +3941,6 @@ static inline int util_fits_cpu(unsigned long util,
 	 * the time.
 	 */
 	capacity_orig = capacity_orig_of(cpu);
-	capacity_orig_thermal = capacity_orig - arch_scale_thermal_pressure(cpu);
 
 	/*
 	 * We want to force a task to fit a cpu as implied by uclamp_max.
@@ -4018,7 +4016,7 @@ static inline int util_fits_cpu(unsigned long util,
 	 */
 	uclamp_min = min(uclamp_min, uclamp_max);
 	if (util < uclamp_min && capacity_orig != SCHED_CAPACITY_SCALE)
-		fits = fits && (uclamp_min <= capacity_orig_thermal);
+		fits = fits && (uclamp_min <= capacity_orig);
 
 	return fits;
 }
