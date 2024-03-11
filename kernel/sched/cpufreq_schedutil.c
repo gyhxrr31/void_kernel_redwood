@@ -849,6 +849,20 @@ static void sugov_clear_global_tunables(void)
 		global_tunables = NULL;
 }
 
+static unsigned short little_up __read_mostly = 500;
+static unsigned short little_down __read_mostly = 20000;
+static unsigned short big_up __read_mostly = 1000;
+static unsigned short big_down __read_mostly = 10000;
+static unsigned short prime_up __read_mostly = 2000;
+static unsigned short prime_down __read_mostly = 5000;
+
+module_param(little_up, short, 0644);
+module_param(little_down, short, 0644);
+module_param(big_up, short, 0644);
+module_param(big_down, short, 0644);
+module_param(prime_up, short, 0644);
+module_param(prime_down, short, 0644);
+
 static int sugov_init(struct cpufreq_policy *policy)
 {
 	struct sugov_policy *sg_policy;
@@ -895,18 +909,18 @@ static int sugov_init(struct cpufreq_policy *policy)
 	tunables->down_rate_limit_us = cpufreq_policy_transition_delay_us(policy);
 
 	if (cpumask_test_cpu(policy->cpu, cpu_lp_mask)) {
-		tunables->up_rate_limit_us = 500;
-		tunables->down_rate_limit_us = 20000;
+		tunables->up_rate_limit_us = little_up;
+		tunables->down_rate_limit_us = little_down;
 	}
 
 	if (cpumask_test_cpu(policy->cpu, cpu_perf_mask)) {
-		tunables->up_rate_limit_us = 1000;
-		tunables->down_rate_limit_us = 10000;
+		tunables->up_rate_limit_us = big_up;
+		tunables->down_rate_limit_us = big_down;
 	}
 
         if (cpumask_test_cpu(policy->cpu, cpu_prime_mask)) {
-                tunables->up_rate_limit_us = 2000;
-                tunables->down_rate_limit_us = 5000;
+                tunables->up_rate_limit_us = prime_up;
+                tunables->down_rate_limit_us = prime_down;
         }
 
 	policy->governor_data = sg_policy;
