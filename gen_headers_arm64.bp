@@ -397,7 +397,6 @@ gen_headers_out_arm64 = [
     "linux/neighbour.h",
     "linux/net.h",
     "linux/net_dropmon.h",
-    "linux/netfilter_ipv4/ipt_NATTYPE.h",
     "linux/net_namespace.h",
     "linux/net_tstamp.h",
     "linux/netconf.h",
@@ -1025,8 +1024,6 @@ gen_headers_out_arm64 = [
     "vidc/media/msm_media_info.h",
     "vidc/media/msm_vidc_utils.h",
     "linux/netfilter_ipv4/ipt_TRIGGER.h",
-    "audio/linux/msm_audio_ar.h",
-    "linux/eavb_shared.h",
 ]
 
 genrule {

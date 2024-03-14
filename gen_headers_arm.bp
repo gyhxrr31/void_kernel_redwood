@@ -410,7 +410,6 @@ gen_headers_out_arm = [
     "linux/netfilter_arp.h",
     "linux/netfilter_bridge.h",
     "linux/netfilter_ipv4.h",
-    "linux/netfilter_ipv4/ipt_NATTYPE.h",
     "linux/netfilter_ipv6.h",
     "linux/netlink.h",
     "linux/netlink_diag.h",
@@ -1029,9 +1028,6 @@ gen_headers_out_arm = [
     "display/hdcp/msm_hdmi_hdcp_mgr.h",
     "vidc/media/msm_media_info.h",
     "vidc/media/msm_vidc_utils.h",
-    "linux/netfilter_ipv4/ipt_TRIGGER.h",
-    "audio/linux/msm_audio_ar.h",
-    "linux/eavb_shared.h",
 ]
 
 genrule {
