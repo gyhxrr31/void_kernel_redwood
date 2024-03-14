@@ -851,9 +851,9 @@ static void sugov_clear_global_tunables(void)
 
 static unsigned short little_up __read_mostly = 500;
 static unsigned short little_down __read_mostly = 20000;
-static unsigned short big_up __read_mostly = 1000;
+static unsigned short big_up __read_mostly = 500;
 static unsigned short big_down __read_mostly = 10000;
-static unsigned short prime_up __read_mostly = 2000;
+static unsigned short prime_up __read_mostly = 500;
 static unsigned short prime_down __read_mostly = 5000;
 
 module_param(little_up, short, 0644);
