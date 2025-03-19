@@ -498,7 +498,6 @@ struct battery_chg_dev {
 	u32				usb_prev_mode;
 #ifdef CONFIG_MACH_XIAOMI
 	struct delayed_work		xm_prop_change_work;
-	struct delayed_work		charger_debug_info_print_work;
 	u8				*digest;
 	u32				*ss_auth_data;
 	u32				hw_version_build;
@@ -511,10 +510,6 @@ struct battery_chg_dev {
 	/* To track the driver initialization status */
 	bool				initialized;
 	bool				notify_en;
-#ifdef CONFIG_MACH_XIAOMI
-	/*battery auth check for ssr*/
-	bool				battery_auth;
-#endif
 };
 
 static const int battery_prop_map[BATT_PROP_MAX] = {
@@ -690,20 +685,14 @@ static int battery_chg_write(struct battery_chg_dev *bcdev, void *data,
 		if (!rc) {
 			pr_err("Error, timed out sending message\n");
 			mutex_unlock(&bcdev->rw_lock);
-#ifndef CONFIG_MACH_XIAOMI
 			return -ETIMEDOUT;
-#endif
 		}
 
 		rc = 0;
 	}
 	mutex_unlock(&bcdev->rw_lock);
 
-#ifndef CONFIG_MACH_XIAOMI
 	return rc;
-#else
-	return 0;
-#endif
 }
 
 static int write_property_id(struct battery_chg_dev *bcdev,
@@ -1787,10 +1776,6 @@ static int battery_psy_get_prop(struct power_supply *psy,
 		pval->intval = (pst->prop[prop_id] * 60) >= 65535 ?
 			65535 : (pst->prop[prop_id] * 60);
 		break;
-#else
-	case POWER_SUPPLY_PROP_CHARGE_COUNTER:
-		pval->intval = DIV_ROUND_CLOSEST(pst->prop[prop_id], 100);
-		break;
 #endif
 	default:
 		pval->intval = pst->prop[prop_id];
@@ -2706,7 +2691,6 @@ static ssize_t authentic_store(struct class *c,
 	if (kstrtobool(buf, &val))
 		return -EINVAL;
 
-	bcdev->battery_auth = val;
 	pr_debug("authentic_store: %d\n", val);
 	rc = write_property_id(bcdev, &bcdev->psy_list[PSY_TYPE_XM],
 				XM_PROP_AUTHENTIC, val);
@@ -4770,52 +4754,6 @@ static void generate_xm_charge_uvent(struct work_struct *work)
 	free_page((unsigned long)prop_buf);
 	return;
 }
-
-#define CHARGING_PERIOD_S		30
-#define DISCHARGE_PERIOD_S		300
-static void xm_charger_debug_info_print_work(struct work_struct *work)
-{
-	struct battery_chg_dev *bcdev = container_of(work, struct battery_chg_dev, charger_debug_info_print_work.work);
-	struct power_supply *usb_psy = NULL;
-	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_XM];
-	int rc, usb_present = 0, vbus_vol_uv, ibus_ua;
-	int interval = DISCHARGE_PERIOD_S;
-	union power_supply_propval val = {0, };
-
-	usb_psy = bcdev->psy_list[PSY_TYPE_USB].psy;
-	if (usb_psy) {
-		rc = usb_psy_get_prop(usb_psy, POWER_SUPPLY_PROP_ONLINE, &val);
-		if (!rc)
-			usb_present = val.intval;
-		else
-			usb_present = 0;
-	} else
-		return;
-
-	if (usb_present == 1) {
-		rc = usb_psy_get_prop(usb_psy, POWER_SUPPLY_PROP_VOLTAGE_NOW, &val);
-		if (!rc)
-			vbus_vol_uv = val.intval;
-		else
-			vbus_vol_uv = 0;
-
-		rc = usb_psy_get_prop(usb_psy, POWER_SUPPLY_PROP_CURRENT_NOW, &val);
-		if (!rc)
-			ibus_ua = val.intval;
-		else
-			ibus_ua = 0;
-
-		rc = read_property_id(bcdev, pst, XM_PROP_AUTHENTIC);
-		if (!rc && !pst->prop[XM_PROP_AUTHENTIC] && bcdev->battery_auth) {
-			rc = write_property_id(bcdev, &bcdev->psy_list[PSY_TYPE_XM],
-					       XM_PROP_AUTHENTIC, bcdev->battery_auth);
-		}
-		interval = CHARGING_PERIOD_S;
-	} else
-		interval = DISCHARGE_PERIOD_S;
-
-	schedule_delayed_work(&bcdev->charger_debug_info_print_work, interval * HZ);
-}
 #endif
 
 static int battery_chg_parse_dt(struct battery_chg_dev *bcdev)
@@ -5110,7 +5048,6 @@ static int battery_chg_register_panel_notifier(struct battery_chg_dev *bcdev)
 
 static int battery_chg_probe(struct platform_device *pdev)
 {
-	struct battery_chg_dev *sbcdev;
 	struct battery_chg_dev *bcdev;
 	struct device *dev = &pdev->dev;
 	struct pmic_glink_client_data client_data = { };
@@ -5119,6 +5056,7 @@ static int battery_chg_probe(struct platform_device *pdev)
 #ifdef CONFIG_MACH_XIAOMI
 	msleep(50);
 #endif
+
 	bcdev = devm_kzalloc(&pdev->dev, sizeof(*bcdev), GFP_KERNEL);
 	if (!bcdev)
 		return -ENOMEM;
@@ -5155,16 +5093,15 @@ static int battery_chg_probe(struct platform_device *pdev)
 	if (!bcdev->psy_list[PSY_TYPE_BATTERY].model)
 		return -ENOMEM;
 #ifdef CONFIG_MACH_XIAOMI
-	bcdev->digest =
-		devm_kzalloc(&pdev->dev, BATTERY_DIGEST_LEN, GFP_KERNEL);
+	bcdev->digest = devm_kzalloc(&pdev->dev, BATTERY_DIGEST_LEN, GFP_KERNEL);
 	if (!bcdev->digest)
 		return -ENOMEM;
-	bcdev->ss_auth_data =
-		devm_kzalloc(&pdev->dev, BATTERY_SS_AUTH_DATA_LEN * sizeof(u32), GFP_KERNEL);
+	bcdev->ss_auth_data = devm_kzalloc(&pdev->dev, BATTERY_SS_AUTH_DATA_LEN *
+					   sizeof(u32), GFP_KERNEL);
 	if (!bcdev->ss_auth_data)
 		return -ENOMEM;
-	bcdev->psy_list[PSY_TYPE_WLS].version =
-		devm_kzalloc(&pdev->dev, MAX_STR_LEN, GFP_KERNEL);
+	bcdev->psy_list[PSY_TYPE_WLS].version = devm_kzalloc(&pdev->dev, MAX_STR_LEN,
+							     GFP_KERNEL);
 	if (!bcdev->psy_list[PSY_TYPE_WLS].version)
 		return -ENOMEM;
 #endif
@@ -5178,11 +5115,7 @@ static int battery_chg_probe(struct platform_device *pdev)
 #ifdef CONFIG_MACH_XIAOMI
 	INIT_WORK(&bcdev->notify_blankstate_work, notify_blankstate_changed_work);
 #endif
-
 	bcdev->dev = dev;
-#ifdef CONFIG_MACH_XIAOMI
-	bcdev->battery_auth = false;
-#endif
 
 	rc = battery_chg_register_panel_notifier(bcdev);
 	if (rc < 0)
@@ -5224,9 +5157,6 @@ static int battery_chg_probe(struct platform_device *pdev)
 
 	bcdev->restrict_fcc_ua = DEFAULT_RESTRICT_FCC_UA;
 	platform_set_drvdata(pdev, bcdev);
-#ifdef CONFIG_MACH_XIAOMI
-	sbcdev = bcdev;
-#endif
 	bcdev->fake_soc = -EINVAL;
 	rc = battery_chg_init_psy(bcdev);
 	if (rc < 0)
@@ -5261,8 +5191,6 @@ static int battery_chg_probe(struct platform_device *pdev)
 
 #ifdef CONFIG_MACH_XIAOMI
 	INIT_DELAYED_WORK(&bcdev->xm_prop_change_work, generate_xm_charge_uvent);
-	INIT_DELAYED_WORK(&bcdev->charger_debug_info_print_work, xm_charger_debug_info_print_work);
-	schedule_delayed_work(&bcdev->charger_debug_info_print_work, 5 * HZ);
 
 	bcdev->slave_fg_verify_flag = false;
 	bcdev->shutdown_delay_en = true;

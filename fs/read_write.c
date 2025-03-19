@@ -582,7 +582,7 @@ static void remove_vintf(char __user *buf, size_t len)
 {
 	/* VINTF for Secure Element which will be nullified */
 	static const char *const vintf =
-		"<hal format=\"hidl\">\n"
+		"    <hal format=\"hidl\">\n"
 		"        <name>android.hardware.secure_element</name>\n"
 		"        <transport>hwbinder</transport>\n"
 		"        <fqname>@1.2::ISecureElement/SIM1</fqname>\n"
