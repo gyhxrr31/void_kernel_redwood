@@ -5,6 +5,7 @@
 #include <linux/string.h>
 #include <linux/types.h>
 #include <linux/version.h>
+#include <linux/namei.h>
 
 #include "allowlist.h"
 #include "klog.h" // IWYU pragma: keep
@@ -115,12 +116,10 @@ struct my_dir_context {
 	void *private_data;
 	int depth;
 	int *stop;
+	struct super_block* root_sb;
 };
 // https://docs.kernel.org/filesystems/porting.html
-// filldir_t (readdir callbacks) calling conventions have changed.
-// Instead of returning 0 or -E... it returns bool now.
-// false means "no more" (as -E... used to) and true - "keep going" (as 0 in old calling conventions).
-// Rationale: callers never looked at specific -E... values anyway. -> iterate_shared() instances require no changes at all, all filldir_t ones in the tree converted.
+// filldir_t (readdir callbacks) calling conventions have changed. Instead of returning 0 or -E... it returns bool now. false means "no more" (as -E... used to) and true - "keep going" (as 0 in old calling conventions). Rationale: callers never looked at specific -E... values anyway. -> iterate_shared() instances require no changes at all, all filldir_t ones in the tree converted.
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
 #define FILLDIR_RETURN_TYPE bool
 #define FILLDIR_ACTOR_CONTINUE true
@@ -138,6 +137,8 @@ FILLDIR_RETURN_TYPE my_actor(struct dir_context *ctx, const char *name,
 	struct my_dir_context *my_ctx =
 		container_of(ctx, struct my_dir_context, ctx);
 	char dirpath[DATA_PATH_LEN];
+	int err;
+	struct path path;
 
 	if (!my_ctx) {
 		pr_err("Invalid context\n");
@@ -151,10 +152,28 @@ FILLDIR_RETURN_TYPE my_actor(struct dir_context *ctx, const char *name,
 	if (!strncmp(name, "..", namelen) || !strncmp(name, ".", namelen))
 		return FILLDIR_ACTOR_CONTINUE; // Skip "." and ".."
 
+	if (d_type == DT_DIR && namelen >= 8 && !strncmp(name, "vmdl", 4) &&
+	    !strncmp(name + namelen - 4, ".tmp", 4)) {
+		pr_info("Skipping directory: %.*s\n", namelen, name);
+		return FILLDIR_ACTOR_CONTINUE; // Skip staging package
+	}
+
 	if (snprintf(dirpath, DATA_PATH_LEN, "%s/%.*s", my_ctx->parent_dir,
 		     namelen, name) >= DATA_PATH_LEN) {
 		pr_err("Path too long: %s/%.*s\n", my_ctx->parent_dir, namelen,
 		       name);
+		return FILLDIR_ACTOR_CONTINUE;
+	}
+
+	err = kern_path(dirpath, 0, &path);
+
+	if (err) {
+		pr_err("get dirpath %s err: %d\n", dirpath, err);
+		return FILLDIR_ACTOR_CONTINUE;
+	}
+
+	if (my_ctx->root_sb != path.dentry->d_inode->i_sb) {
+		pr_info("skip cross fs: %s", dirpath);
 		return FILLDIR_ACTOR_CONTINUE;
 	}
 
@@ -186,14 +205,9 @@ FILLDIR_RETURN_TYPE my_actor(struct dir_context *ctx, const char *name,
 			}
 
 			bool is_manager = is_manager_apk(dirpath);
-#ifdef CONFIG_KSU_DEBUG
 			pr_info("Found new base.apk at path: %s, is_manager: %d\n",
 				dirpath, is_manager);
-#endif
 			if (is_manager) {
-#ifndef CONFIG_KSU_DEBUG
-				pr_info("Found new KernelSU base.apk at path: %s\n", dirpath);
-#endif
 				crown_manager(dirpath, my_ctx->private_data);
 				*my_ctx->stop = 1;
 			}
@@ -205,10 +219,19 @@ FILLDIR_RETURN_TYPE my_actor(struct dir_context *ctx, const char *name,
 
 void search_manager(const char *path, int depth, struct list_head *uid_data)
 {
-	int i, stop = 0;
+	int i, stop = 0, err;
 	struct list_head data_path_list;
+	struct path kpath;
+	struct super_block* root_sb;
 	INIT_LIST_HEAD(&data_path_list);
 	INIT_LIST_HEAD(&apk_path_hash_list);
+
+	err = kern_path(path, 0, &kpath);
+
+	if (err) {
+		pr_err("get search root %s err: %d\n", path, err);
+		return;
+	}
 
 	// Initialize APK cache list
 	struct apk_path_hash *pos, *n;
@@ -222,7 +245,9 @@ void search_manager(const char *path, int depth, struct list_head *uid_data)
 	data.depth = depth;
 	list_add_tail(&data.list, &data_path_list);
 
-	for (i = depth; i > 0; i--) {
+	root_sb = kpath.dentry->d_inode->i_sb;
+
+	for (i = depth; i >= 0; i--) {
 		struct data_path *pos, *n;
 
 		list_for_each_entry_safe(pos, n, &data_path_list, list) {
@@ -231,7 +256,8 @@ void search_manager(const char *path, int depth, struct list_head *uid_data)
 						      .parent_dir = pos->dirpath,
 						      .private_data = uid_data,
 						      .depth = pos->depth,
-						      .stop = &stop };
+						      .stop = &stop,
+							  .root_sb = root_sb };
 			struct file *file;
 
 			if (!stop) {
@@ -352,12 +378,14 @@ void track_throne()
 		if (ksu_is_manager_uid_valid()) {
 			pr_info("manager is uninstalled, invalidate it!\n");
 			ksu_invalidate_manager_uid();
+			goto prune;
 		}
 		pr_info("Searching manager...\n");
 		search_manager("/data/app", 2, &uid_list);
 		pr_info("Search manager finished\n");
 	}
 
+prune:
 	// then prune the allowlist
 	ksu_prune_allowlist(is_uid_exist, &uid_list);
 out:
