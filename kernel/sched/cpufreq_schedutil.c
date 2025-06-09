@@ -255,13 +255,16 @@ static inline unsigned long apply_dvfs_headroom(unsigned long util, int cpu)
 	return util + headroom;
 }
 
+static unsigned short dvfs_headroom __read_mostly = 1;
+module_param(dvfs_headroom, short, 0644);
 
 unsigned long sugov_effective_cpu_perf(int cpu, unsigned long actual,
 				 unsigned long min,
 				 unsigned long max)
 {
 	/* Add dvfs headroom to actual utilization */
-	actual = apply_dvfs_headroom(actual, cpu);
+	actual = dvfs_headroom ? apply_dvfs_headroom(actual, cpu) :
+				 map_util_perf(actual);
 	/* Actually we don't need to target the max performance */
 	if (actual < max)
 		max = actual;
