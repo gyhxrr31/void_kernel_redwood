@@ -9288,7 +9288,7 @@ static void print_preempt_disable_ip(int preempt_offset, unsigned long ip)
 		return;
 
 	pr_err("Preemption disabled at:");
-	print_ip_sym(KERN_ERR, ip);
+	print_ip_sym(ip);
 	pr_cont("\n");
 }
 
