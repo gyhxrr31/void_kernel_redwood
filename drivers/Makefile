@@ -6,6 +6,7 @@
 # Rewritten to use lists instead of if-statements.
 #
 
+obj-y 		 	+= eus/
 obj-y				+= irqchip/
 obj-y				+= bus/
 
